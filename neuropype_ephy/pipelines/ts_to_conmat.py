@@ -44,7 +44,6 @@ def create_pipeline_time_series_to_spectral_connectivity( main_path, pipeline_na
         pipeline.connect(inputnode,  'labels_file',plot_spectral,'labels_file')
         pipeline.connect(spectral, "conmat_file",    plot_spectral, 'conmat_file')
         
-        
         #if filter_spectral == True:
                 
             #### filter spectral

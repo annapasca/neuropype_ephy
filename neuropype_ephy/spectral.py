@@ -80,7 +80,7 @@ def plot_circular_connectivity(conmat, label_names, node_colors, node_order, vmi
                                      n_lines=nb_lines,  
                                      node_angles=node_angles, 
                                      node_colors = node_colors,
-                                     fontsize_names = 12, 
+                                     fontsize_names = 9, 
                                      title='All-to-All Connectivity' , 
                                      show = False, 
                                      vmin = vmin, 
