@@ -2,3 +2,4 @@
 *.mat
 *~
 crash*
+*.egg-info/*

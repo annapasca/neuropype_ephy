@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 
 """
-Definition of nodes for computing reordering and plotting coclass_matrices
+Definition of nodes for computing and plotting spectral connectivity
 """
 import numpy as np
 import os
+import pickle
 
 from nipype.interfaces.base import BaseInterface, \
     BaseInterfaceInputSpec, traits, File, TraitedSpec, isdefined
@@ -36,7 +37,36 @@ class SpectralConnOutputSpec(TraitedSpec):
 class SpectralConn(BaseInterface):
     
     """
+    Description:
+    
     Compute spectral connectivity in a given frequency bands
+    
+    Inputs:
+    
+    ts_file 
+        type = File , exists=True, desc='nodes * time series in .npy format', mandatory=True
+    
+    sfreq 
+        type = Float, desc='sampling frequency', mandatory=True
+    
+    freq_band 
+        type = List(Float) , exists=True, desc='frequency bands', mandatory=True
+    
+    con_method 
+        type = Enum("coh","imcoh","plv","pli","wpli","pli2_unbiased","ppc","cohy","wpli2_debiased") , desc='metric computed on time series for connectivity'
+        
+    epoch_window_length 
+        type = Float, desc='epoched data', mandatory=False
+    
+    export_to_matlab 
+        type = Bool, default = False, desc='If conmat is exported to .mat format as well',usedefault = True
+   
+    Outputs:
+    
+    conmat_file 
+        type = File, exists=True, desc="spectral connectivty matrix in .npy format"
+    
+    
     """
     input_spec = SpectralConnInputSpec
     output_spec = SpectralConnOutputSpec
@@ -100,8 +130,38 @@ class PlotSpectralConnOutputSpec(TraitedSpec):
 class PlotSpectralConn(BaseInterface):
     
     """
-    Plot spectral connectivity matrix
+    Description:
+    
+    Plot connectivity matrix using mne plot_circular_connectivity function
+    
+    Inputs:
+    
+    conmat_file 
+        type = File, exists=True, desc='connectivity matrix in .npy format', mandatory=True
+    
+    is_sensor_space 
+        type = Bool, default = True, desc = 'if True uses labels as returned from mne', usedefault = True
+    
+    vmin 
+        type = Float, default = 0.3, desc='min scale value', usedefault = True
+    
+    vmax
+        type = Float, default = 1.0, desc='max scale value', usedefault = True
+    
+    nb_lines 
+        type = Int, default = 200, desc='nb lines kept in the representation', usedefault = True
+    
+    labels_file 
+        type = File, desc='list of labels associated with nodes'
+    
+    Outputs:
+    
+    plot_conmat_file
+        type = File, exists=True, desc="plot spectral connectivity matrix in .eps format"
+        
+    
     """
+    
     input_spec = PlotSpectralConnInputSpec
     output_spec = PlotSpectralConnOutputSpec
 
@@ -136,46 +196,64 @@ class PlotSpectralConn(BaseInterface):
                 node_colors = None
             
             else:
+                labels = []
+                with open(labels_file, "rb") as f:
+                    for _ in range(pickle.load(f)):
+                        labels.append(pickle.load(f))
+                
+                print '\n ********************** \n' 
+                print len(labels)
+                print '\n ********************** \n' 
+#                0/0
                 # read colors
-                node_colors = [label.color for label in labels_file]    
+                node_colors = [label.color for label in labels]    
                 
                 # reorder the labels based on their location in the left hemi
-                label_names = [label.name for label in labels_file]
+                label_names = [label.name for label in labels]
                 lh_labels = [name for name in label_names if name.endswith('lh')]
-
+                rh_labels = [name for name in label_names if name.endswith('rh')]
+                
                 # Get the y-location of the label
-                label_ypos = list()
+                label_ypos_lh = list()
                 for name in lh_labels:
                     idx = label_names.index(name)
-                    ypos = np.mean(labels_file[idx].pos[:, 1])
-                    label_ypos.append(ypos)
-
-                 # TODO aggiungere il Brainstem!
+                    ypos = np.mean(labels[idx].pos[:, 1])
+                    label_ypos_lh.append(ypos)
+                    
                 try:
                     idx = label_names.index('Brain-Stem')
-                    ypos = np.mean(labels_file[idx].pos[:, 1])
+                    ypos = np.mean(labels[idx].pos[:, 1])
                     lh_labels.append('Brain-Stem')
-                    label_ypos.append(ypos)
+                    label_ypos_lh.append(ypos)
                 except ValueError:
                     pass
                         
                 # Reorder the labels based on their location
-                lh_labels = [label for (yp, label) in sorted(zip(label_ypos, lh_labels))]
+                lh_labels = [label for (yp, label) in sorted(zip(label_ypos_lh, lh_labels))]
+#                rh_labels = [label for (yp, label) in sorted(zip(label_ypos_rh, rh_labels))]
                 
                 # For the right hemi
-                rh_labels = [label[:-2] + 'rh' for label in lh_labels]
+                rh_labels = [label[:-2] + 'rh' for label in lh_labels
+                            if label != 'Brain-Stem' and label[:-2]+ 'rh' in rh_labels]
 
                 # Save the plot order 
                 node_order = list()
                 node_order.extend(lh_labels[::-1])  # reverse the order
-                node_order.extend(rh_labels)             
-
+                node_order.extend(rh_labels)    
+                print '\n ********************** \n'  
+                print lh_labels
+                print rh_labels
+                print '\n ********************** \n'  
         else:
             label_names = range(conmat.shape[0])
             node_order  = label_names
             node_colors = None
            
-        
+        print '\n ********************** \n'   
+        print len(label_names)
+        print len(node_order)
+        print '\n ********************** \n'   
+#        0/0
         self.plot_conmat_file = plot_circular_connectivity(conmat,label_names,node_colors,node_order, vmin,vmax ,nb_lines, fname)
 
         return runtime

@@ -70,51 +70,52 @@ def preprocess_ICA_fif_to_ts(fif_file, ECG_ch_name, EoG_ch_name, l_freq, h_freq,
     import numpy as np
 
     import mne
-    from mne.io import Raw	
+    from mne.io import Raw
     from mne.preprocessing import ICA, read_ica
     from mne.preprocessing import create_ecg_epochs, create_eog_epochs
     from mne.report import Report
 
     from nipype.utils.filemanip import split_filename as split_f
-    
+
     report = Report()
 
-    subj_path,basename,ext = split_f(fif_file)
-    (data_path,  sbj_name) = os.path.split(subj_path)
+    subj_path, basename, ext = split_f(fif_file)
+    (data_path, sbj_name) = os.path.split(subj_path)
     print data_path
-     
-    ### Read raw
-    #   If None the compensation in the data is not modified. If set to n, e.g. 3, apply   
-    #   gradient compensation of grade n as for CTF systems (compensation=3)
+
+    # Read raw
+    # If None the compensation in the data is not modified.
+    # If set to n, e.g. 3, apply gradient compensation of grade n as for
+    # CTF systems (compensation=3)
     raw = Raw(fif_file, preload=True)
 
-    ### select sensors                                         
-    select_sensors = mne.pick_types(raw.info, meg=True, ref_meg= False, exclude='bads')
-    picks_meeg     = mne.pick_types(raw.info, meg=True, eeg=True, exclude='bads')
-    
-    ### save electrode locations
+    # select sensors
+    select_sensors = mne.pick_types(raw.info, meg=True, ref_meg=False,
+                                    exclude='bads')
+    picks_meeg = mne.pick_types(raw.info, meg=True, eeg=True, exclude='bads')
+
+    # save electrode locations
     sens_loc = [raw.info['chs'][i]['loc'][:3] for i in select_sensors]
     sens_loc = np.array(sens_loc)
 
-    	# AP 21032016 
-#    channel_coords_file = os.path.join(data_path, "correct_channel_coords.txt")
     channel_coords_file = os.path.abspath("correct_channel_coords.txt")
-    print '*************************** ' + channel_coords_file + '*********************************' 
-    np.savetxt(channel_coords_file ,sens_loc , fmt = '%s')
+    print '*** ' + channel_coords_file + '***'
+    np.savetxt(channel_coords_file, sens_loc, fmt='%s')
 
-    ### save electrode names
+    # save electrode names
     sens_names = np.array([raw.ch_names[pos] for pos in select_sensors],dtype = "str")
 
     # AP 21032016 
-#    channel_names_file = os.path.join(data_path, "correct_channel_names.txt")  
+#    channel_names_file = os.path.join(data_path, "correct_channel_names.txt") 
     channel_names_file = os.path.abspath("correct_channel_names.txt")
     np.savetxt(channel_names_file,sens_names , fmt = '%s')
  
     ### filtering + downsampling
-    #raw.filter(l_freq = l_freq, h_freq = h_freq, picks = picks_meeg, method='iir', n_jobs=8)
-    raw.filter(l_freq = l_freq, h_freq = h_freq, picks = picks_meeg, method='iir')
-    raw.resample(sfreq = down_sfreq, npad = 0)
-
+    raw.filter(l_freq=l_freq, h_freq=h_freq, picks=picks_meeg,
+               method='iir', n_jobs=8)
+#    raw.filter(l_freq = l_freq, h_freq = h_freq, picks = picks_meeg,
+#               method='iir')
+#    raw.resample(sfreq=down_sfreq, npad=0)
 
     ### 1) Fit ICA model using the FastICA algorithm
     # Other available choices are `infomax` or `extended-infomax`
@@ -126,42 +127,45 @@ def preprocess_ICA_fif_to_ts(fif_file, ECG_ch_name, EoG_ch_name, l_freq, h_freq,
 
     # check if we have an ICA, if yes, we load it
     ica_filename = os.path.join(subj_path,basename + "-ica.fif")  
-    if os.path.exists(ica_filename) == False:
+    if os.path.exists(ica_filename) is False:
         ica = ICA(n_components=variance, method='fastica', max_iter=500) # , max_iter=500
         ica.fit(raw, picks=select_sensors, reject=reject) # decim = 3, 
-        
+
         has_ICA = False
     else:
         has_ICA = True
         print ica_filename + '   exists!!!'
         ica = read_ica(ica_filename)
-        ica.exclude = [] 
+        ica.exclude = []
 
-    ### 2) identify bad components by analyzing latent sources.
+    # 2) identify bad components by analyzing latent sources.
     # generate ECG epochs use detection via phase statistics
-    
+
     # if we just have exclude channels we jump these steps
 #    if len(ica.exclude)==0:
     n_max_ecg = 3
     n_max_eog = 2
-    
+
     # check if ECG_ch_name is in the raw channels
     if ECG_ch_name in raw.info['ch_names']:
-        ecg_epochs = create_ecg_epochs(raw, tmin=-.5, tmax=.5, picks=select_sensors, 
-                                       ch_name = ECG_ch_name)
+        ecg_epochs = create_ecg_epochs(raw, tmin=-.5, tmax=.5,
+                                       picks=select_sensors,
+                                       ch_name=ECG_ch_name)
     # if not  a synthetic ECG channel is created from cross channel average
     else:
-        ecg_epochs = create_ecg_epochs(raw, tmin=-.5, tmax=.5, picks=select_sensors)
-    
-    ### ICA for ECG artifact 
+        ecg_epochs = create_ecg_epochs(raw, tmin=-.5, tmax=.5,
+                                       picks=select_sensors)
+
+    # ICA for ECG artifact
     # threshold=0.25 come default
     ecg_inds, scores = ica.find_bads_ecg(ecg_epochs, method='ctps')
     print scores
-    print '*************************** ' + str(len(ecg_inds)) + '*********************************'
+    print '\n len ecg_inds *** ' + str(len(ecg_inds)) + '***\n'
     if len(ecg_inds) > 0:
         ecg_evoked = ecg_epochs.average()
-        
-        fig1 = ica.plot_scores(scores, exclude=ecg_inds, title=ICA_title % 'ecg', show=is_show)
+
+        fig1 = ica.plot_scores(scores, exclude=ecg_inds,
+                               title=ICA_title % 'ecg', show=is_show)
 
         show_picks = np.abs(scores).argsort()[::-1][:5] # Pick the five largest scores and plot them
 
@@ -260,7 +264,7 @@ def preprocess_ICA_fif_to_ts(fif_file, ECG_ch_name, EoG_ch_name, l_freq, h_freq,
     print '*************** n_fig = ' + str(n_fig) + ' n_plot = ' + str(n_plot) + '********************'
     fig = []
     t_start = 0
-    t_stop  = 60 # take the fist 60s
+    t_stop = None # 60 if we want to take the fist 60s
     for n in range(0,n_fig):
         fig_tmp = ica.plot_components(range(n_topo*n,n_topo*(n+1)),title='ICA components', show=is_show)    
         fig.append(fig_tmp)
@@ -309,140 +313,174 @@ def preprocess_ICA_fif_to_ts(fif_file, ECG_ch_name, EoG_ch_name, l_freq, h_freq,
     report.save(report_filename, open_browser=False, overwrite=True)
         
         
-    ### 3) apply ICA to raw data and save solution and report
+    # 3) apply ICA to raw data and save solution and report
     # check the amplitudes do not change
-    raw_ica = ica.apply(raw, copy=True)
+#    raw_ica_file = os.path.abspath(basename[:i_raw] + 'ica-raw.fif')
+    raw_ica_file = os.path.join(subj_path, basename + '-preproc-raw.fif')
+    raw_ica = ica.apply(raw)
 
-    ### save ICA solution  
+    raw_ica.resample(sfreq=down_sfreq, npad=0)
+
+    raw_ica.save(raw_ica_file, overwrite=True)
+
+    # save ICA solution
     print ica_filename
-    if has_ICA == False:
+    if has_ICA is False:
         ica.save(ica_filename)
 
-    ### 4) save data
-    data_noIca,times = raw[select_sensors,:]
-    data,times       = raw_ica[select_sensors,:]
+    # 4) save data
+    data_noIca, times = raw[select_sensors, :]
+    data, times = raw_ica[select_sensors, :]
 
     print data.shape
     print raw.info['sfreq']
-    
-    ts_file = os.path.abspath(basename +"_ica.npy")
-    np.save(ts_file,data)
-    print '********************************* TS FILE ' + ts_file + '*********************************'
+
+    ts_file = os.path.abspath(basename + "_ica.npy")
+    np.save(ts_file, data)
+    print '***** TS FILE ' + ts_file + '*****'
 
     if is_sensor_space:
-        return ts_file,channel_coords_file,channel_names_file,raw.info['sfreq']
+        return ts_file, channel_coords_file, channel_names_file, raw.info['sfreq']
     else:
-        return raw_ica, channel_coords_file,channel_names_file,raw.info['sfreq']
+#        return raw_ica, channel_coords_file, channel_names_file, raw.info['sfreq']
+        return raw_ica_file, channel_coords_file, channel_names_file, raw.info['sfreq']
 
-        
-        
-def preprocess_set_ICA_comp_fif_to_ts(fif_file, n_comp_exclude, l_freq, h_freq, down_sfreq, is_sensor_space):
+
+def preprocess_set_ICA_comp_fif_to_ts(fif_file, n_comp_exclude, l_freq, h_freq,
+                                      down_sfreq, is_sensor_space):
     import os
     import numpy as np
     import sys
 
     import mne
-    from mne.io import Raw	
+    from mne.io import Raw
     from mne.preprocessing import read_ica
     from mne.report import Report
 
     from nipype.utils.filemanip import split_filename as split_f
-    
+
     report = Report()
 
-    subj_path,basename,ext = split_f(fif_file)
+    subj_path, basename, ext = split_f(fif_file)
     (data_path,  sbj_name) = os.path.split(subj_path)
-    print '********************************* ' + data_path + '*********************************'
-    print '********************************* ' + sbj_name + '*********************************'
 
-    n_session = int(filter(str.isdigit, basename))
-    print '********************************* n session = %d' %n_session + '*********************************'
+    print '*** SBJ %s' % sbj_name + '***'
 
-    ### Read raw
+#    n_session = int(filter(str.isdigit, basename))
+#    print '*** n session = %d' % n_session + '***'
+
+    # Read raw
     raw = Raw(fif_file, preload=True)
 
-    ### select sensors                                         
-    select_sensors = mne.pick_types(raw.info, meg=True, ref_meg= False, exclude='bads')
-    picks_meeg     = mne.pick_types(raw.info, meg=True, eeg=True, exclude='bads')
-    
-    ### save electrode locations
+    # select sensors
+    select_sensors = mne.pick_types(raw.info, meg=True, ref_meg=False,
+                                    exclude='bads')
+    picks_meeg = mne.pick_types(raw.info, meg=True, eeg=True,
+                                exclude='bads')
+
+    # save electrode locations
     sens_loc = [raw.info['chs'][i]['loc'][:3] for i in select_sensors]
     sens_loc = np.array(sens_loc)
 
-	# AP 21032016 
-#    channel_coords_file = os.path.join(data_path, "correct_channel_coords.txt")
     channel_coords_file = os.path.abspath("correct_channel_coords.txt")
-    np.savetxt(channel_coords_file ,sens_loc , fmt = '%s')
+    np.savetxt(channel_coords_file, sens_loc, fmt='%s')
 
-    ### save electrode names
-    sens_names = np.array([raw.ch_names[pos] for pos in select_sensors],dtype = "str")
+    # save electrode names
+    sens_names = np.array([raw.ch_names[pos] for pos in select_sensors],
+                          dtype="str")
 
-    # AP 21032016 
-#    channel_names_file = os.path.join(data_path, "correct_channel_names.txt")  
     channel_names_file = os.path.abspath("correct_channel_names.txt")
-    np.savetxt(channel_names_file,sens_names , fmt = '%s')
-   
-    ### filtering + downsampling
-    #raw.filter(l_freq = l_freq, h_freq = h_freq, picks = picks_meeg, method='iir', n_jobs=8)
-    raw.filter(l_freq = l_freq, h_freq = h_freq, picks = picks_meeg, method='iir')
-    raw.resample(sfreq = down_sfreq, npad = 0)
+    np.savetxt(channel_names_file, sens_names, fmt='%s')
 
-    ### load ICA
-    is_show = False # visualization
-    ica_filename = os.path.join(subj_path,basename + "-ica.fif")  
-    if os.path.exists(ica_filename) == False:
-        print "$$$$$$$$$$$$$ Warning, no %s found" %ica_filename        
-        sys.exit() 
+    # filtering + downsampling
+    # TODO n_jobs=8
+    raw.filter(l_freq=l_freq, h_freq=h_freq, picks=picks_meeg,
+               method='iir',n_jobs=8)
+#    raw.resample(sfreq=down_sfreq, npad=0)
+
+    # load ICA
+    is_show = False  # visualization
+    ica_filename = os.path.join(subj_path, basename + '-ica.fif')
+    if os.path.exists(ica_filename) is False:
+        print "$$$ Warning, no %s found" % ica_filename
+        sys.exit()
     else:
         ica = read_ica(ica_filename)
-        
-    
+
     # AP 210316
-    print '***** ica.exclude before set components= ', ica.exclude
+    '''
+    print '*** ica.exclude before set components= ', ica.exclude
     if n_comp_exclude.has_key(sbj_name):
-        print '********************************* ICA to be excluded for sbj %s ' %sbj_name + ' ' + str(n_comp_exclude[sbj_name]) + '*********************************'
+        print '*** ICA to be excluded for sbj %s ' % sbj_name + ' ' + str(n_comp_exclude[sbj_name]) + '***'
         matrix_c_ICA = n_comp_exclude[sbj_name]
-    
+
         if not matrix_c_ICA[n_session-1]:
             print 'no ICA'
         else:
-            print '********************************* ICA to be excluded for session %d ' %n_session + ' ' + str(matrix_c_ICA[n_session-1]) + '*********************************'        
-
+            print '*** ICA to be excluded for session %d ' %n_session + ' ' + str(matrix_c_ICA[n_session-1]) + '***'        
     ica.exclude = matrix_c_ICA[n_session-1]
-#    ica.exclude = n_comp_exclude
-    print '***** ica.exclude after set components = ', ica.exclude
-    
+    '''
+    # AP new dict
+    print '*** ica.exclude before set components= ', ica.exclude
+    if n_comp_exclude.has_key(sbj_name):
+        print '*** ICA to be excluded for sbj %s ' % sbj_name + ' ' + str(n_comp_exclude[sbj_name]) + '***'
+        session_dict = n_comp_exclude[sbj_name]
+        session_names = session_dict.keys()
+
+        componentes = []
+        for s in session_names:
+            if basename.find(s) > -1:
+                componentes = session_dict[s]
+                break
+
+        if len(componentes) == 0:
+            print '\n no ICA to be excluded \n'
+        else:
+            print '\n *** ICA to be excluded for session %s ' % s + \
+                    ' ' + str(componentes) + ' *** \n'
+
+    ica.exclude = componentes
+
+    print '\n *** ica.exclude after set components = ', ica.exclude
+
     fig1 = ica.plot_overlay(raw, show=is_show)
-    report.add_figs_to_section(fig1, captions=['Signal'], section = 'Signal quality') 
-    report_filename = os.path.join(subj_path,basename + "-report_NEW.html")
+    report.add_figs_to_section(fig1, captions=['Signal'],
+                               section='Signal quality')
+    report_filename = os.path.join(subj_path, basename + "-report_NEW.html")
     print report_filename
     report.save(report_filename, open_browser=False, overwrite=True)
-        
-        
-    ### 3) apply ICA to raw data and save solution and report
-    # check the amplitudes do not change
-    raw_ica = ica.apply(raw, copy=True)
 
-    ### save ICA solution  
+    # 3) apply ICA to raw data and save solution and report
+    # check the amplitudes do not change
+#    raw_ica_file = os.path.abspath(basename[:i_raw] + 'ica-raw.fif')
+    raw_ica_file = os.path.join(subj_path, basename + '-preproc-raw.fif')
+    raw_ica = ica.apply(raw)
+    
+    raw_ica.resample(sfreq=down_sfreq, npad=0)
+    
+    raw_ica.save(raw_ica_file, overwrite=True)
+
+    # save ICA solution
     print ica_filename
     ica.save(ica_filename)
 
-    ### 4) save data
-    data_noIca,times = raw[select_sensors,:]
-    data,times       = raw_ica[select_sensors,:]
+    # 4) save data
+    data_noIca, times = raw[select_sensors, :]
+    data, times = raw_ica[select_sensors, :]
 
     print data.shape
     print raw.info['sfreq']
-    
-    ts_file = os.path.abspath(basename +"_ica.npy")
-    np.save(ts_file,data)
-    print '********************************* TS FILE ' + ts_file + '*********************************'
-    print '********************************* raw.info[sfreq] = ' + str(raw.info['sfreq'])
-    
+
+    ts_file = os.path.abspath(basename + '_ica.npy')
+    np.save(ts_file, data)
+    print '*** TS FILE ' + ts_file + '***'
+    print '*** raw.info[sfreq] = ' + str(raw.info['sfreq'])
+
     if is_sensor_space:
-        return ts_file,channel_coords_file,channel_names_file,raw.info['sfreq']
+        return ts_file, channel_coords_file, channel_names_file, raw.info['sfreq']
     else:
-        return raw_ica, channel_coords_file,channel_names_file,raw.info['sfreq']
+        return raw_ica_file, channel_coords_file, channel_names_file, raw.info['sfreq']
+
 
 def preprocess_ts(ts_file,orig_channel_names_file,orig_channel_coords_file, h_freq, orig_sfreq, down_sfreq ,prefiltered = False):
     
@@ -515,3 +553,77 @@ def preprocess_ts(ts_file,orig_channel_names_file,orig_channel_coords_file, h_fr
     else:
         print "No downsampling was applied as orig_sfreq and down_sfreq are identical"
         return ts_file,channel_coords_file,channel_names_file,orig_sfreq
+
+
+def get_raw_info(raw_fname):
+    from mne.io import Raw
+
+    raw = Raw(raw_fname, preload=True)
+    return raw.info
+
+
+def get_raw_sfreq(raw_fname):
+    from mne.io import Raw
+
+    raw = Raw(raw_fname, preload=True)
+    return raw.info['sfreq']
+
+
+def create_reject_dict(raw_info):
+    from mne import pick_types
+    
+    picks_eog = pick_types(raw_info, meg=False, ref_meg=False, eog=True)
+    picks_mag = pick_types(raw_info, meg='mag', ref_meg=False)
+    picks_grad = pick_types(raw_info, meg='grad', ref_meg=False)
+
+    reject=dict()
+    if picks_mag.size != 0:
+        reject['mag'] = 4e-12
+    if picks_grad.size != 0:
+        reject['grad'] = 4000e-13
+    if picks_eog.size != 0:
+        reject['eog'] = 150e-6
+        
+    return reject
+
+
+def create_ts(raw_fname):
+    
+    import os
+    import numpy as np
+
+    import mne
+    from mne.io import Raw
+
+    from nipype.utils.filemanip import split_filename as split_f
+
+    raw = Raw(raw_fname, preload=True)
+    
+    subj_path, basename, ext = split_f(raw_fname)    
+    
+    select_sensors = mne.pick_types(raw.info, meg=True, ref_meg=False,
+                                    exclude='bads')
+    
+    # save electrode locations
+    sens_loc = [raw.info['chs'][i]['loc'][:3] for i in select_sensors]
+    sens_loc = np.array(sens_loc)
+
+    channel_coords_file = os.path.abspath("correct_channel_coords.txt")
+    np.savetxt(channel_coords_file, sens_loc, fmt='%s')
+
+    # save electrode names
+    sens_names = np.array([raw.ch_names[pos] for pos in select_sensors],
+                          dtype="str")
+
+    channel_names_file = os.path.abspath("correct_channel_names.txt")
+    np.savetxt(channel_names_file, sens_names, fmt='%s')
+    
+    data, times = raw[select_sensors, :]
+    
+    print data.shape
+
+    ts_file = os.path.abspath(basename + '.npy')
+    np.save(ts_file, data)
+    print '\n *** TS FILE ' + ts_file + '*** \n'
+
+    return ts_file, channel_coords_file, channel_names_file, raw.info['sfreq']

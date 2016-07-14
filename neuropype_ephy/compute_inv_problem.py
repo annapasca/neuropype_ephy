@@ -16,6 +16,7 @@ def compute_noise_cov(cov_fname, raw):
 
     from mne import compute_raw_covariance, pick_types, write_cov
     from nipype.utils.filemanip import split_filename as split_f
+    from neuropype_ephy.preproc import create_reject_dict
 
     print '***** COMPUTE RAW COV *****' + cov_fname
 
@@ -24,7 +25,8 @@ def compute_noise_cov(cov_fname, raw):
         data_path, basename, ext = split_f(raw.info['filename'])
         fname = op.join(data_path, '%s-cov.fif' % basename)
 
-        reject = dict(mag=4e-12, grad=4000e-13, eog=250e-6)
+        reject = create_reject_dict(raw.info)
+#        reject = dict(mag=4e-12, grad=4000e-13, eog=250e-6)
 
         picks = pick_types(raw.info, meg=True, ref_meg=False, exclude='bads')
 
@@ -136,23 +138,35 @@ def compute_ts_inv_sol(raw, fwd_filename, cov_fname, snr, inv_method, aseg):
 
 # compute the inverse solution on raw data considering N_r regions in source
 # space  based on a FreeSurfer cortical parcellation
-def compute_ROIs_inv_sol(raw, sbj_id, sbj_dir, fwd_filename, cov_fname, snr,
-                         inv_method, parc, aseg, aseg_labels):
+def compute_ROIs_inv_sol(raw_filename, sbj_id, sbj_dir, fwd_filename, cov_fname,
+                         is_epoched=False, event_id=None, t_min=None, t_max=None,
+                         is_evoked=False, events_id = [],
+                         snr=1.0, inv_method='MNE',
+                         parc='aparc', aseg=False, aseg_labels=[],
+                         is_blind=False, labels_removed=[]):
     import os.path as op
     import numpy as np
     import mne
-    from mne.minimum_norm import make_inverse_operator, apply_inverse_raw
-    from nipype.utils.filemanip import split_filename as split_f
-    
-    from neuropype_ephy.compute_inv_problem import get_aseg_labels
+    import pickle
 
-    print '***** READ noise covariance %s *****' % cov_fname
+    from mne.io import Raw
+    from mne.minimum_norm import make_inverse_operator, apply_inverse_raw
+    from mne.minimum_norm import apply_inverse_epochs, apply_inverse
+    
+    from nipype.utils.filemanip import split_filename as split_f
+
+    from neuropype_ephy.compute_inv_problem import get_aseg_labels
+    from neuropype_ephy.preproc import create_reject_dict
+    
+    print '\n*** READ raw filename %s ***\n' % raw_filename
+    raw = Raw(raw_filename)
+    subj_path, basename, ext = split_f(raw.info['filename'])
+
+    print '\n*** READ noise covariance %s ***\n' % cov_fname
     noise_cov = mne.read_cov(cov_fname)
 
-    print '***** READ FWD SOL %s *****' % fwd_filename
+    print '\n*** READ FWD SOL %s ***\n' % fwd_filename
     forward = mne.read_forward_solution(fwd_filename)
-
-    print '***** SNR %s *****' % snr
     
     if not aseg:
         forward = mne.convert_forward_solution(forward, surf_ori=True,
@@ -161,7 +175,7 @@ def compute_ROIs_inv_sol(raw, sbj_id, sbj_dir, fwd_filename, cov_fname, snr,
     lambda2 = 1.0 / snr ** 2
 
     # compute inverse operator
-    print '***** COMPUTE INV OP *****'
+    print '\n*** COMPUTE INV OP ***\n'
     if not aseg:
         loose = 0.2
         depth = 0.8
@@ -174,20 +188,65 @@ def compute_ROIs_inv_sol(raw, sbj_id, sbj_dir, fwd_filename, cov_fname, snr,
                                              fixed=False)
 
     # apply inverse operator to the time windows [t_start, t_stop]s
-    print '***** APPLY INV OP *****'
-    stc = apply_inverse_raw(raw, inverse_operator, lambda2, inv_method,
-                            label=None,
-                            start=None, stop=None,
-                            buffer_size=1000,
-                            pick_ori=None)  # None 'normal'
+    print '\n*** APPLY INV OP ***\n'
+    if is_epoched:
+        events = mne.find_events(raw)
+        picks = mne.pick_types(raw.info, meg=True, eog=True, exclude='bads')
+        reject = create_reject_dict(raw.info)
 
-    print '***'
-    print 'stc dim ' + str(stc.shape)
-    print '***'
+        if is_evoked:
+            epochs = mne.Epochs(raw, events, events_id, t_min, t_max, picks=picks,
+                                baseline=(None, 0), reject=reject)
+            evoked = [epochs[k].average() for k in events_id]
+            snr = 3.0
+            lambda2 = 1.0 / snr ** 2
+            
+            ev_list = events_id.items()
+            for k in range(len(events_id)):
+                stc = apply_inverse(evoked[k], inverse_operator, lambda2,
+                                    inv_method, pick_ori=None)
+
+                print '\n*** STC for event %s ***\n' % ev_list[k][0]
+                stc_file = op.abspath(basename + '_' + ev_list[k][0])
+
+                print '***'
+                print 'stc dim ' + str(stc.shape)
+                print '***'
+
+                if not aseg:
+                    stc.save(stc_file)
+
+        else:
+            epochs = mne.Epochs(raw, events, event_id, t_min, t_max,
+                                picks=picks, baseline=(None, 0), reject=reject)
+            stc = apply_inverse_epochs(epochs, inverse_operator, lambda2,
+                                       inv_method, pick_ori=None)
+
+            print '***'
+            print 'len stc %d' % len(stc)
+            print '***'
+
+    else:
+        stc = apply_inverse_raw(raw, inverse_operator, lambda2, inv_method,
+                                label=None,
+                                start=None, stop=None,
+                                buffer_size=1000,
+                                pick_ori=None)  # None 'normal'
+
+        print '***'
+        print 'stc dim ' + str(stc.shape)
+        print '***'
 
     labels_cortex = mne.read_labels_from_annot(sbj_id, parc=parc,
                                                subjects_dir=sbj_dir)
-
+    if is_blind:
+        for l in labels_cortex:
+            if l.name in labels_removed:
+                print l.name
+                labels_cortex.remove(l)
+                
+    print '\n*** %d ***\n'  % len(labels_cortex)      
+       
     src = inverse_operator['src']
 
     # allow_empty : bool -> Instead of emitting an error, return all-zero time
@@ -199,21 +258,49 @@ def compute_ROIs_inv_sol(raw, sbj_id, sbj_dir, fwd_filename, cov_fname, snr,
                                                 return_generator=False)
 
     # save results in .npy file that will be the input for spectral node
-    print '***** SAVE SOL *****'
-    subj_path, basename, ext = split_f(raw.info['filename'])
+    print '\n*** SAVE ROI TS ***\n'
+    print len(label_ts)
+    
     ts_file = op.abspath(basename + '_ROI_ts.npy')
     np.save(ts_file, label_ts)
 
     if aseg:
-        labels_aseg = get_aseg_labels(src, sbj_dir, sbj_id, aseg_labels)
+        labels_aseg = get_aseg_labels(src, sbj_dir, sbj_id)
         labels = labels_cortex + labels_aseg
     else:
         labels = labels_cortex
 
-    return ts_file, labels
+    print labels[0].pos
+    print len(labels)
+
+    labels_file = op.abspath('labels.dat')
+    with open(labels_file, "wb") as f:
+        pickle.dump(len(labels), f)
+        for value in labels:
+            pickle.dump(value, f)
+
+    label_names_file = op.abspath('label_names.txt')
+    label_coords_file = op.abspath('label_coords.txt')
+
+    label_names = []
+    label_coords = []
+
+    for value in labels:
+        label_names.append(value.name)
+#        label_coords.append(value.pos[0])
+        label_coords.append(np.mean(value.pos, axis=0))
+
+    np.savetxt(label_names_file, np.array(label_names, dtype=str),
+               fmt="%s")
+    np.savetxt(label_coords_file, np.array(label_coords, dtype=float),
+               fmt="%f %f %f")
+
+   
+    return ts_file, labels_file, label_names_file, label_coords_file
 
 
-def get_aseg_labels(src, sbj_dir, sbj_id, aseg_labels):
+# return a list of Label objs
+def get_aseg_labels(src, sbj_dir, sbj_id):
     import os.path as op
     import numpy as np
 
@@ -222,7 +309,7 @@ def get_aseg_labels(src, sbj_dir, sbj_id, aseg_labels):
 
     # read the aseg file
     aseg_fname = op.join(sbj_dir, sbj_id, 'mri/aseg.mgz')
-    all_labels_aseg = get_volume_labels_from_aseg_AP(aseg_fname)  # unnecessary
+    all_labels_aseg = get_volume_labels_from_aseg_AP(aseg_fname)
 
     # creo una lista di label per aseg
     labels_aseg = list()
