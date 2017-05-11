@@ -63,9 +63,7 @@ def create_pipeline_time_series_to_spectral_connectivity(main_path,
             sampling frequency
         labels_file : str
             path to the file containing a list of labels associated with nodes
-        index : str
-            what to add to the name of the file	    
-
+        
     Outputs:
 
         pipeline : instance of Workflow
@@ -82,8 +80,7 @@ def create_pipeline_time_series_to_spectral_connectivity(main_path,
         
 #    inputnode = pe.Node(IdentityInterface(fields=['ts_file','freq_band','sfreq','labels_file','epoch_window_length','is_sensor_space','index']), name='inputnode')
     inputnode = pe.Node(IdentityInterface(fields=['ts_file', 'freq_band',
-                                                  'sfreq', 'labels_file',
-                                                  'index']), name='inputnode')
+                                                  'sfreq', 'labels_file']), name='inputnode')
     if len(n_windows) == 0:
             
         print "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$ Multiple trials $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$"
@@ -101,7 +98,6 @@ def create_pipeline_time_series_to_spectral_connectivity(main_path,
         pipeline.connect(inputnode, 'sfreq', spectral, 'sfreq')
         pipeline.connect(inputnode, 'ts_file', spectral, 'ts_file')
         pipeline.connect(inputnode, 'freq_band', spectral, 'freq_band')
-        pipeline.connect(inputnode, 'index', spectral, 'index')
 #        pipeline.connect(inputnode, 'epoch_window_length', spectral, 'epoch_window_length')
 
         #### plot spectral
@@ -149,7 +145,6 @@ def create_pipeline_time_series_to_spectral_connectivity(main_path,
         pipeline.connect(inputnode, 'sfreq', spectral, 'sfreq')
         pipeline.connect(win_ts, 'win_ts_files', spectral, 'ts_file')
         pipeline.connect(inputnode, 'freq_band', spectral, 'freq_band')
-        pipeline.connect(inputnode, 'index', spectral, 'index')
 #        pipeline.connect(inputnode, 'epoch_window_length', spectral, 'epoch_window_length')
 
  
