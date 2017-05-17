@@ -1,17 +1,26 @@
-# 2015.10.09 12:02:45 EDT
-# Embedded file name: /home/karim/Documents/pasca/packages/neuropype_ephy/neuropype_ephy/compute_inv_problem.py
-"""
-Created on Thu Oct  8 17:53:07 2015
-
-@author: pasca
-"""
+# Created on Thu Oct  8 17:53:07 2015
+# @author: pasca
 
 
-# compute noise covariance data from a continuous segment of raw data.
-# Employ empty room data (collected without the subject) to calculate
-# the full noise covariance matrix.
-# This is recommended for analyzing ongoing spontaneous activity.
 def compute_noise_cov(cov_fname, raw):
+    """
+    Compute noise covariance data from a continuous segment of raw data.
+    Employ empty room data (collected without the subject) to calculate
+    the full noise covariance matrix.
+    This is recommended for analyzing ongoing spontaneous activity.
+
+    Inputs
+        cov_fname : str
+            noise covariance file name
+        raw : Raw
+            the raw data
+
+    Output
+        cov_fname : str
+            noise covariance file name in which is saved the noise covariance
+            matrix
+    """
+
     import os.path as op
 
     from mne import compute_raw_covariance, pick_types, write_cov
@@ -26,7 +35,6 @@ def compute_noise_cov(cov_fname, raw):
         fname = op.join(data_path, '%s-cov.fif' % basename)
 
         reject = create_reject_dict(raw.info)
-#        reject = dict(mag=4e-12, grad=4000e-13, eog=250e-6)
 
         picks = pick_types(raw.info, meg=True, ref_meg=False, exclude='bads')
 
@@ -41,6 +49,19 @@ def compute_noise_cov(cov_fname, raw):
 
 
 def read_noise_cov(cov_fname, raw_info):
+    """
+    Read a noise covariance matrix from cov_fname
+
+    Inputs
+        cov_fname : str
+            noise covariance file name
+        raw_info : dict
+            dictionary containing the information about the raw data
+
+    Outputs
+        noise_cov : Covariance
+            the noise covariance matrix
+    """
     import os.path as op
     import numpy as np
     import mne
@@ -63,7 +84,6 @@ def read_noise_cov(cov_fname, raw_info):
     return noise_cov
 
 
-# compute inverse solution on raw data
 def compute_ts_inv_sol(raw, fwd_filename, cov_fname, snr, inv_method, aseg):
     import os.path as op
     import numpy as np
@@ -136,38 +156,105 @@ def compute_ts_inv_sol(raw, fwd_filename, cov_fname, snr, inv_method, aseg):
 '''
 
 
-# compute the inverse solution on raw data considering N_r regions in source
-# space  based on a FreeSurfer cortical parcellation
-def compute_ROIs_inv_sol(raw_filename, sbj_id, sbj_dir, fwd_filename, cov_fname,
-                         is_epoched=False, event_id=None, t_min=None, t_max=None,
-                         is_evoked=False, events_id = [],
+def compute_ROIs_inv_sol(raw_filename, sbj_id, sbj_dir, fwd_filename,
+                         cov_fname, is_epoched=False, events_id=[],
+                         t_min=None, t_max=None, is_evoked=False,
                          snr=1.0, inv_method='MNE',
                          parc='aparc', aseg=False, aseg_labels=[],
-                         is_blind=False, labels_removed=[]):
+                         save_stc=False):
+    """
+    Compute the inverse solution on raw/epoched data and return the average
+    time series computed in the N_r regions of the source space defined by
+    the specified cortical parcellation
+
+    Inputs
+        raw_filename : str
+            filename of the raw/epoched data
+        sbj_id : str
+            subject name
+        sbj_dir : str
+            Freesurfer directory
+        fwd_filename : str
+            filename of the forward operator
+        cov_filename : str
+            filename of the noise covariance matrix
+        is_epoched : bool
+            if True and events_id = None the input data are epoch data
+            in the format -epo.fif
+            if True and events_id is not None, the raw data are epoched
+            according to events_id and t_min and t_max values
+        events_id: dict
+            the dict of events
+        t_min, t_max: int
+            define the time interval in which to epoch the raw data
+        is_evoked: bool
+            if True the raw data will be averaged according to the events
+            contained in the dict events_id
+        inv_method : str
+            the inverse method to use; possible choices: MNE, dSPM, sLORETA
+        snr : float
+            the SNR value used to define the regularization parameter
+        parc: str
+            the parcellation defining the ROIs atlas in the source space
+        aseg: bool
+            if True a mixed source space will be created and the sub cortical
+            regions defined in aseg_labels will be added to the source space
+        aseg_labels: list
+            list of substructures we want to include in the mixed source space
+        save_stc: bool
+            if True the stc will be saved
+
+    Outputs
+        ts_file : str
+            filename of the file where are saved the ROIs time series
+        labels_file : str
+            filename of the file where are saved the ROIs of the parcellation
+        label_names_file : str
+            filename of the file where are saved the name of the ROIs of the
+            parcellation
+        label_coords_file : str
+            filename of the file where are saved the coordinates of the
+            centroid of the ROIs of the parcellation
+
+    """
+    import os
     import os.path as op
     import numpy as np
     import mne
     import pickle
 
-    from mne.io import Raw
+    from mne.io import read_raw_fif
+    from mne import read_epochs
     from mne.minimum_norm import make_inverse_operator, apply_inverse_raw
     from mne.minimum_norm import apply_inverse_epochs, apply_inverse
-    
+    from mne import get_volume_labels_from_src
+
     from nipype.utils.filemanip import split_filename as split_f
 
-    from neuropype_ephy.compute_inv_problem import get_aseg_labels
     from neuropype_ephy.preproc import create_reject_dict
-    
+
+    try:
+        traits.undefined(events_id)
+    except NameError:
+        events_id = None
+
     print '\n*** READ raw filename %s ***\n' % raw_filename
-    raw = Raw(raw_filename)
-    subj_path, basename, ext = split_f(raw.info['filename'])
+    if is_epoched and events_id is None:
+        epochs = read_epochs(raw_filename)
+        info = epochs.info
+    else:
+        raw = read_raw_fif(raw_filename, add_eeg_ref=False)
+        raw.set_eeg_reference()
+        info = raw.info
+
+    subj_path, basename, ext = split_f(raw_filename)
 
     print '\n*** READ noise covariance %s ***\n' % cov_fname
     noise_cov = mne.read_cov(cov_fname)
 
     print '\n*** READ FWD SOL %s ***\n' % fwd_filename
     forward = mne.read_forward_solution(fwd_filename)
-    
+
     if not aseg:
         forward = mne.convert_forward_solution(forward, surf_ori=True,
                                                force_fixed=False)
@@ -183,24 +270,24 @@ def compute_ROIs_inv_sol(raw_filename, sbj_id, sbj_dir, fwd_filename, cov_fname,
         loose = None
         depth = None
 
-    inverse_operator = make_inverse_operator(raw.info, forward, noise_cov,
+    inverse_operator = make_inverse_operator(info, forward, noise_cov,
                                              loose=loose, depth=depth,
                                              fixed=False)
 
     # apply inverse operator to the time windows [t_start, t_stop]s
     print '\n*** APPLY INV OP ***\n'
-    if is_epoched:
+    if is_epoched and events_id is not None:
         events = mne.find_events(raw)
-        picks = mne.pick_types(raw.info, meg=True, eog=True, exclude='bads')
-        reject = create_reject_dict(raw.info)
+        picks = mne.pick_types(info, meg=True, eog=True, exclude='bads')
+        reject = create_reject_dict(info)
 
         if is_evoked:
-            epochs = mne.Epochs(raw, events, events_id, t_min, t_max, picks=picks,
-                                baseline=(None, 0), reject=reject)
+            epochs = mne.Epochs(raw, events, events_id, t_min, t_max,
+                                picks=picks, baseline=(None, 0), reject=reject)
             evoked = [epochs[k].average() for k in events_id]
             snr = 3.0
             lambda2 = 1.0 / snr ** 2
-            
+
             ev_list = events_id.items()
             for k in range(len(events_id)):
                 stc = apply_inverse(evoked[k], inverse_operator, lambda2,
@@ -217,7 +304,7 @@ def compute_ROIs_inv_sol(raw_filename, sbj_id, sbj_dir, fwd_filename, cov_fname,
                     stc.save(stc_file)
 
         else:
-            epochs = mne.Epochs(raw, events, event_id, t_min, t_max,
+            epochs = mne.Epochs(raw, events, events_id, t_min, t_max,
                                 picks=picks, baseline=(None, 0), reject=reject)
             stc = apply_inverse_epochs(epochs, inverse_operator, lambda2,
                                        inv_method, pick_ori=None)
@@ -226,6 +313,13 @@ def compute_ROIs_inv_sol(raw_filename, sbj_id, sbj_dir, fwd_filename, cov_fname,
             print 'len stc %d' % len(stc)
             print '***'
 
+    elif is_epoched and events_id is None:
+        stc = apply_inverse_epochs(epochs, inverse_operator, lambda2,
+                                   inv_method, pick_ori=None)
+
+        print '***'
+        print 'len stc %d' % len(stc)
+        print '***'
     else:
         stc = apply_inverse_raw(raw, inverse_operator, lambda2, inv_method,
                                 label=None,
@@ -237,35 +331,43 @@ def compute_ROIs_inv_sol(raw_filename, sbj_id, sbj_dir, fwd_filename, cov_fname,
         print 'stc dim ' + str(stc.shape)
         print '***'
 
+    if save_stc:
+        if aseg:
+            for i in range(len(stc)):
+                try:
+                    os.mkdir(op.join(subj_path, 'TS'))
+                except OSError:
+                    pass
+                stc_file = op.join(subj_path, 'TS', basename + '_' +
+                                   inv_method + '_stc_' + str(i) + '.npy')
+
+                if not op.isfile(stc_file):
+                    np.save(stc_file, stc[i].data)
+
     labels_cortex = mne.read_labels_from_annot(sbj_id, parc=parc,
                                                subjects_dir=sbj_dir)
-    if is_blind:
-        for l in labels_cortex:
-            if l.name in labels_removed:
-                print l.name
-                labels_cortex.remove(l)
-                
-    print '\n*** %d ***\n'  % len(labels_cortex)      
-       
+
+    print '\n*** %d ***\n' % len(labels_cortex)
+
     src = inverse_operator['src']
 
     # allow_empty : bool -> Instead of emitting an error, return all-zero time
     # courses for labels that do not have any vertices in the source estimate
-    # TODO cosa accade se la uso con solo la cortex? -> OK!!!
-    label_ts = mne.extract_label_time_course_AP(stc, labels_cortex, src,
-                                                mode='mean_flip',
-                                                allow_empty=True,
-                                                return_generator=False)
+    label_ts = mne.extract_label_time_course(stc, labels_cortex, src,
+                                             mode='mean',
+                                             allow_empty=True,
+                                             return_generator=False)
 
     # save results in .npy file that will be the input for spectral node
     print '\n*** SAVE ROI TS ***\n'
     print len(label_ts)
-    
+
     ts_file = op.abspath(basename + '_ROI_ts.npy')
     np.save(ts_file, label_ts)
 
     if aseg:
-        labels_aseg = get_aseg_labels(src, sbj_dir, sbj_id)
+        print sbj_id
+        labels_aseg = get_volume_labels_from_src(src, sbj_id, sbj_dir)
         labels = labels_cortex + labels_aseg
     else:
         labels = labels_cortex
@@ -295,47 +397,4 @@ def compute_ROIs_inv_sol(raw_filename, sbj_id, sbj_dir, fwd_filename, cov_fname,
     np.savetxt(label_coords_file, np.array(label_coords, dtype=float),
                fmt="%f %f %f")
 
-   
     return ts_file, labels_file, label_names_file, label_coords_file
-
-
-# return a list of Label objs
-def get_aseg_labels(src, sbj_dir, sbj_id):
-    import os.path as op
-    import numpy as np
-
-    from mne import Label
-    from mne import get_volume_labels_from_aseg_AP
-
-    # read the aseg file
-    aseg_fname = op.join(sbj_dir, sbj_id, 'mri/aseg.mgz')
-    all_labels_aseg = get_volume_labels_from_aseg_AP(aseg_fname)
-
-    # creo una lista di label per aseg
-    labels_aseg = list()
-    for nr in range(2, len(src)):
-        vertices = src[nr]['vertno']
-
-        pos = src[nr]['rr'][src[nr]['vertno'], :]
-        roi_str = src[nr]['seg_name']
-        try:
-            ind = all_labels_aseg[0].index(roi_str)
-            color = np.array(all_labels_aseg[1][ind])/255
-        except ValueError:
-            pass
-
-        if 'left' in roi_str.lower():
-            hemi = 'lh'
-            roi_str = roi_str.replace('Left-', '') + '-lh'
-        elif 'right' in roi_str.lower():
-            hemi = 'rh'
-            roi_str = roi_str.replace('Right-', '') + '-rh'
-        else:
-            hemi = 'both'
-
-        label = Label(vertices=vertices, pos=pos, hemi=hemi,
-                      name=roi_str, color=color,
-                      subject=sbj_id)
-        labels_aseg.append(label)
-
-    return labels_aseg

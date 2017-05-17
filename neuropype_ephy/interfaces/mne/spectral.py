@@ -99,6 +99,7 @@ class SpectralConn(BaseInterface):
         print mode
         
         if epoch_window_length == traits.Undefined:
+            print '*** NO epoch_window_length ***'
             data = np.load(ts_file)
         else:
             raw_data = np.load(ts_file)
