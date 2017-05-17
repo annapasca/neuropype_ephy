@@ -19,11 +19,18 @@ def split_txt(sample_size,txt_file,sep_label_name, repair = True, sep = ";"):
             
             for line in lines:
                 
+                #print line
+                if line.startswith('"') and line.strip().endswith('"'):
+                    line = line.strip()[1:-1]               
                 print line
-                
+                 
                 splitted_line = line.strip().split(sep,1)
                 
+                #print splitted_line
+                
                 name = splitted_line[0]
+                
+                print name
                 
                 elec_names.append(name)
                 
@@ -32,12 +39,17 @@ def split_txt(sample_size,txt_file,sep_label_name, repair = True, sep = ";"):
                 
                 data = splitted_line[1]
                 
-                print len(data.split(sep))
+                #print data
+                
+                #print len(data.split(sep))
                 
                 new_data = data.replace(" ",sep)
                 
+                
                 df_data.append([float(data.replace(",",".")) for data in new_data.split(sep)])
                 
+                #print df_data
+             
         print df_data
         print np.array(df_data).shape
         
@@ -103,3 +115,42 @@ def split_txt(sample_size,txt_file,sep_label_name, repair = True, sep = ";"):
 
     return splitted_ts_file,elec_names_file
 
+def read_brainvision_vhdr(vhdr_file,sample_size):
+    
+    import os
+    import mne
+    import numpy as np
+    
+    data_raw = mne.io.read_raw_brainvision(vhdr_file, verbose = True)
+    ch_names_file = os.path.abspath("channel_names.txt")
+    
+    np.savetxt(ch_names_file,data_raw.ch_names,fmt = "%s")
+    
+    print data_raw.ch_names
+    
+    
+    data,times = data_raw[:]
+    
+    print data.shape
+    
+    
+    nb_epochs = data.shape[1] / sample_size
+
+    print nb_epochs
+
+    splitted_ts = np.split(data,nb_epochs,axis = 1)
+
+    print len(splitted_ts)
+
+    print splitted_ts[0]
+
+    np_splitted_ts = np.array(splitted_ts,dtype = 'float')
+
+    print np_splitted_ts.shape
+    
+    splitted_ts_file = os.path.abspath("splitted_ts.npy")
+
+    np.save(splitted_ts_file,np_splitted_ts)
+    
+    return splitted_ts_file,ch_names_file
+    
