@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
-
 """
 Definition of nodes for computing and plotting spectral connectivity
 """
+# Author: David Meunier <david_meunier_79@hotmail.fr>
+
+
 import numpy as np
 import os
 import pickle
@@ -32,7 +34,7 @@ class SpectralConnInputSpec(BaseInterfaceInputSpec):
     
     export_to_matlab = traits.Bool(False, desc='If conmat is exported to .mat format as well',usedefault = True)
     
-    index = traits.String("0",desc = "What to add to the name of the file" ,usedefault = True)
+    index = traits.Int(0,desc = "What to add to the name of the file" ,usedefault = True)
     
     multi_con = traits.Bool(False, desc='If multiple connectivity matrices are exported',usedefault = True)
     
@@ -69,8 +71,11 @@ class SpectralConn(BaseInterface):
     export_to_matlab 
         type = Bool, default = False, desc='If conmat is exported to .mat format as well',usedefault = True
    
-    index
-        type = String, default = "0", desc='What to add to the name of the file',usedefault = True
+    index:
+        type = Int, default = 0, desc='What to add to the name of the file',usedefault = True
+        
+    multi_con:
+        type Bool, default = False, desc='If multiple connectivity matrices are exported',usedefault = True
         
     Outputs:
     
@@ -103,19 +108,36 @@ class SpectralConn(BaseInterface):
             data = np.load(ts_file)
         else:
             raw_data = np.load(ts_file)
+            
+            print raw_data.shape
+            print int(epoch_window_length * sfreq)
+            
+            if len(raw_data.shape) == 3:
+                
+                if raw_data.shape[0] == 1:
+                    
+                    raw_data = raw_data[0,:,:]
+                    
+            print raw_data.shape
+                  
             nb_splits = raw_data.shape[1] // (epoch_window_length * sfreq)
             reste = raw_data.shape[1] % int(epoch_window_length * sfreq)
+            
+            
+            
             if reste != 0:
                 raw_data = raw_data[:,:-reste]
+                
             print "epoching data with {}s by window, resulting in {} epochs (rest = {})".format(epoch_window_length,nb_splits,reste)
             data = np.array(np.array_split(raw_data,nb_splits,axis = 1))
-        
-        
+          
+            print data.shape
+            
         if multi_con:
-            self.conmat_files = compute_and_save_multi_spectral_connectivity(all_data = data,con_method = con_method,index = index, sfreq=sfreq, fmin= freq_band[0], fmax=freq_band[1],export_to_matlab = export_to_matlab, mode = mode)
+            self.conmat_files = compute_and_save_multi_spectral_connectivity(all_data = data,con_method = con_method, sfreq=sfreq, fmin= freq_band[0], fmax=freq_band[1],export_to_matlab = export_to_matlab, mode = mode)
             
         else:
-            self.conmat_file = compute_and_save_spectral_connectivity(data = data,con_method = con_method,index = index, sfreq=sfreq, fmin= freq_band[0], fmax=freq_band[1],export_to_matlab = export_to_matlab, mode = mode)
+            self.conmat_file = compute_and_save_spectral_connectivity(data = data,con_method = con_method, index = index, sfreq=sfreq, fmin= freq_band[0], fmax=freq_band[1],export_to_matlab = export_to_matlab, mode = mode)
         
         
         return runtime
