@@ -25,7 +25,8 @@ def create_pipeline_source_reconstruction(main_path, sbj_dir,
                                           aseg=False,
                                           aseg_labels=[],
                                           noise_cov_fname=None,
-                                          save_stc=False):
+                                          save_stc=False,
+                                          save_mixed_src_space=False):
 
     """
     Description:
@@ -68,7 +69,9 @@ def create_pipeline_source_reconstruction(main_path, sbj_dir,
             the empty room data
         save_stc: bool (defualt False)
             if True the stc will be saved
-
+        save_mixed_src_space: bool (defualt False)
+            if True the mixed src space will be saved in the FS folder
+            
     Inputs (inputnode):
 
         raw : str
@@ -95,6 +98,8 @@ def create_pipeline_source_reconstruction(main_path, sbj_dir,
     LF_computation.inputs.aseg = aseg
     if aseg:
         LF_computation.inputs.aseg_labels = aseg_labels
+        LF_computation.inputs.save_mixed_src_space = save_mixed_src_space
+        
 
     pipeline.connect(inputnode, 'sbj_id', LF_computation, 'sbj_id')
 
