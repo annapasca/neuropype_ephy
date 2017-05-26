@@ -85,37 +85,48 @@ def create_src_space(sbj_dir, sbj_id, spacing):
     return src
 
 
-def create_mixed_source_space(sbj_dir, sbj_id, spacing, labels, src):
+def create_mixed_source_space(sbj_dir, sbj_id, spacing, labels, src,
+                              save_mixed_src_space):
     import os.path as op
-    from mne import setup_volume_source_space
+    import mne
 
     bem_dir = op.join(sbj_dir, sbj_id, 'bem')
 
-#    src_aseg_fname = op.join(bem_dir, '%s-%s-aseg-src.fif' %(sbj_id, spacing))
-    aseg_fname = op.join(sbj_dir, sbj_id, 'mri/aseg.mgz')
+    src_aseg_fname = op.join(bem_dir, '%s-%s-aseg-src.fif' %(sbj_id, spacing))
+    if not op.isfile(src_aseg_fname):
+        
+        aseg_fname = op.join(sbj_dir, sbj_id, 'mri/aseg.mgz')
 
-    if spacing == 'oct-6':
-        pos = 5.0
-    elif spacing == 'ico-5':
-        pos = 3.0
+        if spacing == 'oct-6':
+            pos = 5.0
+        elif spacing == 'ico-5':
+            pos = 3.0
 
-    model_fname = op.join(bem_dir, '%s-5120-bem.fif' % sbj_id)
-    for l in labels:
-        print l
-        vol_label = setup_volume_source_space(sbj_id, mri=aseg_fname,
-                                              pos=pos,
-                                              bem=model_fname,
-                                              volume_label=l,
-                                              subjects_dir=sbj_dir)
-        src += vol_label
-
-#    write_source_spaces(src_aseg_fname, src)
-
-    # Export source positions to nift file
-    nii_fname = op.join(bem_dir, '%s-%s-aseg-src.nii' % (sbj_id, spacing))
-
-    # Combine the source spaces
-    src.export_volume(nii_fname, mri_resolution=True)
+        model_fname = op.join(bem_dir, '%s-5120-bem.fif' % sbj_id)
+        for l in labels:
+            print l
+            vol_label = mne.setup_volume_source_space(sbj_id, mri=aseg_fname,
+                                                      pos=pos,
+                                                      bem=model_fname,
+                                                      volume_label=l,
+                                                      subjects_dir=sbj_dir)
+            src += vol_label
+    
+        if save_mixed_src_space:
+            mne.write_source_spaces(src_aseg_fname, src)
+            print('\n*** source space file {} written ***\n'.format(src_aseg_fname))
+            
+        # Export source positions to nift file
+        nii_fname = op.join(bem_dir, '%s-%s-aseg-src.nii' % (sbj_id, spacing))
+    
+        # Combine the source spaces
+        src.export_volume(nii_fname, mri_resolution=True)
+    else:
+        print('\n*** source space file {} exists!!!\n'.format(src_aseg_fname))
+        src = mne.read_source_spaces(src_aseg_fname)
+        print('src contains {} src spaces'.format(len(src)))
+        for s in src[2:]:
+            print('sub structure {} \n'.format(s['seg_name']))
 
     return src
 
@@ -135,13 +146,15 @@ def is_trans(raw_fname):
 #        raw_fname = raw_fname[:i_ica]
 
     raw_fname_4trans = raw_fname
-    raw_fname_4trans = raw_fname_4trans.replace('_filt', '')
-    raw_fname_4trans = raw_fname_4trans.replace('_dsamp', '')
-    raw_fname_4trans = raw_fname_4trans.replace('_ica', '')
+    raw_fname_4trans = raw_fname_4trans.replace('_', '*')
+    raw_fname_4trans = raw_fname_4trans.replace('-', '*')
+    raw_fname_4trans = raw_fname_4trans.replace('filt', '*')
+    raw_fname_4trans = raw_fname_4trans.replace('dsamp', '*')
+    raw_fname_4trans = raw_fname_4trans.replace('ica', '*')
 
     trans_fname = op.join(data_path, '%s*trans.fif' % raw_fname_4trans)
     for trans_fname in glob.glob(trans_fname):
-        print '\n*** coregistration file %s found!!!\n' % trans_fname
+        print('\n*** coregistration file %s found!!!\n' % trans_fname)
 
     if not op.isfile(trans_fname):
         raise RuntimeError('*** coregistration file %s NOT found!!!'
