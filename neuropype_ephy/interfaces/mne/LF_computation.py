@@ -32,7 +32,10 @@ class LFComputationConnInputSpec(BaseInterfaceInputSpec):
 
     aseg_labels = traits.List(desc='list of substructures in the src space',
                               mandatory=False)
-
+    
+    save_mixed_src_space = traits.Bool('False', desc='if true save src space',
+                                       usedefault=True,
+                                       mandatory=False)
 
 class LFComputationConnOutputSpec(TraitedSpec):
 
@@ -59,6 +62,8 @@ class LFComputation(BaseInterface):
             regions defined in aseg_labels will be added to the source space
         aseg_labels: list (default [])
             list of substructures we want to include in the mixed source space
+        save_mixed_src_space: bool (default False)
+            if True save the mixed src space
     """
     input_spec = LFComputationConnInputSpec
     output_spec = LFComputationConnOutputSpec
@@ -84,6 +89,7 @@ class LFComputation(BaseInterface):
         aseg = self.inputs.aseg
         spacing = self.inputs.spacing
         aseg_labels = self.inputs.aseg_labels
+        save_mixed_src_space = self.inputs.save_mixed_src_space
 
         self.fwd_filename = self._get_fwd_filename(raw_fname, aseg,
                                                    spacing)
@@ -96,7 +102,8 @@ class LFComputation(BaseInterface):
 
             if aseg:
                 src = create_mixed_source_space(sbj_dir, sbj_id, spacing,
-                                                aseg_labels, src)
+                                                aseg_labels, src,
+                                                save_mixed_src_space)
 
             n = sum(src[i]['nuse'] for i in range(len(src)))
             print('il src space contiene %d spaces e %d vertici'
