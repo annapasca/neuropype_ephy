@@ -161,7 +161,7 @@ def compute_ROIs_inv_sol(raw_filename, sbj_id, sbj_dir, fwd_filename,
                          t_min=None, t_max=None, is_evoked=False,
                          snr=1.0, inv_method='MNE',
                          parc='aparc', aseg=False, aseg_labels=[],
-                         save_stc=True):
+                         save_stc=False):
     """
     Compute the inverse solution on raw/epoched data and return the average
     time series computed in the N_r regions of the source space defined by
@@ -332,7 +332,7 @@ def compute_ROIs_inv_sol(raw_filename, sbj_id, sbj_dir, fwd_filename,
         print '***'
 
     if save_stc:
-	for i in range(len(stc)):
+	for i in range(len([stc])):
 	    try:
 		os.mkdir(op.join(subj_path, 'TS'))
 	    except OSError:
@@ -341,7 +341,7 @@ def compute_ROIs_inv_sol(raw_filename, sbj_id, sbj_dir, fwd_filename,
 				inv_method + '_stc_' + str(i) + '.npy')
 
 	    if not op.isfile(stc_file):
-		np.save(stc_file, stc[i].data)
+		np.save(stc_file, [stc][i].data)    
 
     labels_cortex = mne.read_labels_from_annot(sbj_id, parc=parc,
                                                subjects_dir=sbj_dir)
@@ -352,7 +352,7 @@ def compute_ROIs_inv_sol(raw_filename, sbj_id, sbj_dir, fwd_filename,
 
     # allow_empty : bool -> Instead of emitting an error, return all-zero time
     # courses for labels that do not have any vertices in the source estimate
-    label_ts = mne.extract_label_time_course(stc, labels_cortex, src,
+    label_ts = mne.extract_label_time_course([stc], labels_cortex, src,
                                              mode='mean',
                                              allow_empty=True,
                                              return_generator=False)
@@ -374,6 +374,38 @@ def compute_ROIs_inv_sol(raw_filename, sbj_id, sbj_dir, fwd_filename,
     print labels[0].pos
     print len(labels)
 
+#    labels_file = op.abspath('labels.dat')
+#    with open(labels_file, "wb") as f:
+#        pickle.dump(len(labels), f)
+#        for value in labels:
+#            pickle.dump(value, f)
+#
+#    label_names_file = op.abspath('label_names.txt')
+#    label_coords_file = op.abspath('label_coords.txt')
+#
+#    label_names = []
+#    label_coords = []
+#
+#    for value in labels:
+#        label_names.append(value.name)
+##        label_coords.append(value.pos[0])
+#        label_coords.append(np.mean(value.pos, axis=0))
+#
+#    np.savetxt(label_names_file, np.array(label_names, dtype=str),
+#               fmt="%s")
+#    np.savetxt(label_coords_file, np.array(label_coords, dtype=float),
+#               fmt="%f %f %f")
+
+    labels_file, label_names_file, label_coords_file = create_label_files(labels)
+    
+    return ts_file, labels_file, label_names_file, label_coords_file
+    
+
+def create_label_files(labels):
+    import pickle
+    import numpy as np
+    import os.path as op
+    
     labels_file = op.abspath('labels.dat')
     with open(labels_file, "wb") as f:
         pickle.dump(len(labels), f)
@@ -395,5 +427,5 @@ def compute_ROIs_inv_sol(raw_filename, sbj_id, sbj_dir, fwd_filename,
                fmt="%s")
     np.savetxt(label_coords_file, np.array(label_coords, dtype=float),
                fmt="%f %f %f")
-
-    return ts_file, labels_file, label_names_file, label_coords_file
+    
+    return labels_file, label_names_file, label_coords_file
